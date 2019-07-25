@@ -23,7 +23,7 @@ const AES128CtrEncrypt = (iv, key, plaintext) => {
   const cipher = Crypto.createCipheriv('aes-128-ctr', key, iv);
   const firstChunk = cipher.update(plaintext);
   const secondChunk = cipher.final();
-  return Buffer.concat([firstChunk, secondChunk]);
+  return Buffer.concat([iv, firstChunk, secondChunk]);
 };
 
 /**
@@ -33,9 +33,10 @@ const AES128CtrEncrypt = (iv, key, plaintext) => {
  * @param {Buffer} ciphertext
  * @returns {Buffer} plaintext
  */
-const AES128CtrDecrypt = (iv, key, ciphertext) => {
+const AES128CtrDecrypt = (key, ciphertext) => {
+  const iv = ciphertext.slice(0, encKeyLength);
   const cipher = Crypto.createDecipheriv('aes-128-ctr', key, iv);
-  const firstChunk = cipher.update(ciphertext);
+  const firstChunk = cipher.update(ciphertext.slice(encKeyLength));
   const secondChunk = cipher.final();
   return Buffer.concat([firstChunk, secondChunk]);
 };
@@ -64,7 +65,7 @@ const concatKDF = (hashFunc, payload) => {
 };
 
 /**
- * ECIES encrypt
+ * ECIES encrypt, using AES128CTR and HMAC-SHA-256-16
  * @param {Buffer} pubKeyTo Ethereum pub key, 64 bytes
  * @param {Buffer} plaintext Plaintext to be encrypted
  * @param {?{?iv: Buffer, ?ephemPrivKey: Buffer}} opts
@@ -91,11 +92,9 @@ const Encrypt = (pubKeyTo, plaintext, opts) => {
     .update(hash.slice(encKeyLength))
     .digest();
   const ciphertext = AES128CtrEncrypt(iv, encryptionKey, plaintext);
-  const dataToMac = Buffer.concat([iv, ciphertext]);
-  const mac = Crypto.createHmac('sha256', macKey).update(dataToMac).digest();
+  const mac = Crypto.createHmac('sha256', macKey).update(ciphertext).digest();
   const serializedCiphertext = Buffer.concat([
     ephemPubKeyEncoded, // 65 bytes
-    iv, // 16 bytes
     ciphertext,
     mac, // 32 bytes
   ]);
@@ -109,10 +108,9 @@ const Encrypt = (pubKeyTo, plaintext, opts) => {
  * @returns {Buffer} plaintext
  */
 const Decrypt = (privKey, encrypted) => {
-  // read iv, ephemPubKey, mac, ciphertext from encrypted message
+  // read ephemPubKey, mac, ciphertext from encrypted message
   const ephemPubKeyEncoded = encrypted.slice(0, 65);
-  const iv = encrypted.slice(65, 81);
-  const ciphertext = encrypted.slice(81, encrypted.length - 32);
+  const ciphertext = encrypted.slice(65, encrypted.length - 32);
   const mac = encrypted.slice(encrypted.length - 32);
   const ephemPubKey = ec.keyFromPublic(ephemPubKeyEncoded).getPublic();
 
@@ -122,17 +120,17 @@ const Decrypt = (privKey, encrypted) => {
   const macKey = Crypto.createHash('sha256')
     .update(hash.slice(encKeyLength))
     .digest();
-  const dataToMac = Buffer.concat([iv, ciphertext]);
-  const computedMac = Crypto.createHmac('sha256', macKey).update(dataToMac).digest();
+  const computedMac = Crypto.createHmac('sha256', macKey).update(ciphertext).digest();
   // verify mac
   if (!BufferEqual(computedMac, mac)) {
     throw new Error('MAC mismatch');
   }
-  const plaintext = AES128CtrDecrypt(iv, encryptionKey, ciphertext);
+  const plaintext = AES128CtrDecrypt(encryptionKey, ciphertext);
   return plaintext;
 };
 
 module.exports = {
   encrypt: Encrypt,
   decrypt: Decrypt,
+  concatKDF,
 };
