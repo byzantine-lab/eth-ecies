@@ -3,13 +3,13 @@
  * Modified from https://github.com/vhpoet/simple-ecies/blob/master/index.js
  */
 
-'use strict';
+"use strict";
 
-const Crypto = require('crypto');
-const EC = require('elliptic').ec;
+const Crypto = require("crypto");
+const EC = require("elliptic").ec;
 
-const ec = new EC('secp256k1');
-const { Buffer } = require('safe-buffer');
+const ec = new EC("secp256k1");
+const { Buffer } = require("safe-buffer");
 
 const encKeyLength = 16;
 /**
@@ -20,7 +20,7 @@ const encKeyLength = 16;
  * @returns {Buffer} ciphertext
  */
 const AES128CtrEncrypt = (iv, key, plaintext) => {
-  const cipher = Crypto.createCipheriv('aes-128-ctr', key, iv);
+  const cipher = Crypto.createCipheriv("aes-128-ctr", key, iv);
   const firstChunk = cipher.update(plaintext);
   const secondChunk = cipher.final();
   return Buffer.concat([iv, firstChunk, secondChunk]);
@@ -35,7 +35,7 @@ const AES128CtrEncrypt = (iv, key, plaintext) => {
  */
 const AES128CtrDecrypt = (key, ciphertext) => {
   const iv = ciphertext.slice(0, encKeyLength);
-  const cipher = Crypto.createDecipheriv('aes-128-ctr', key, iv);
+  const cipher = Crypto.createDecipheriv("aes-128-ctr", key, iv);
   const firstChunk = cipher.update(ciphertext.slice(encKeyLength));
   const secondChunk = cipher.final();
   return Buffer.concat([firstChunk, secondChunk]);
@@ -75,28 +75,30 @@ const concatKDF = (hashFunc, payload) => {
 const Encrypt = (pubKeyTo, plaintext, opts) => {
   opts = opts || {};
   const ephemPrivKey = ec.keyFromPrivate(
-    opts.ephemPrivKey || Crypto.randomBytes(32),
+    opts.ephemPrivKey || Crypto.randomBytes(32)
   );
   const ephemPubKey = ephemPrivKey.getPublic();
   const ephemPubKeyEncoded = Buffer.from(ephemPubKey.encode());
   // Every EC public key begins with the 0x04 prefix before giving
   // the location of the two point on the curve
-  const px = ephemPrivKey.derive(ec.keyFromPublic(
-    Buffer.concat([Buffer.from([0x04]), pubKeyTo]),
-  ).getPublic());
-  const hash = concatKDF(Crypto.createHash('sha256'), px.toArrayLike(Buffer));
+  const px = ephemPrivKey.derive(
+    ec.keyFromPublic(Buffer.concat([Buffer.from([0x04]), pubKeyTo])).getPublic()
+  );
+  const hash = concatKDF(Crypto.createHash("sha256"), px.toArrayLike(Buffer));
 
   const iv = opts.iv || Crypto.randomBytes(16);
   const encryptionKey = hash.slice(0, encKeyLength);
-  const macKey = Crypto.createHash('sha256')
+  const macKey = Crypto.createHash("sha256")
     .update(hash.slice(encKeyLength))
     .digest();
   const ciphertext = AES128CtrEncrypt(iv, encryptionKey, plaintext);
-  const mac = Crypto.createHmac('sha256', macKey).update(ciphertext).digest();
+  const mac = Crypto.createHmac("sha256", macKey)
+    .update(ciphertext)
+    .digest();
   const serializedCiphertext = Buffer.concat([
     ephemPubKeyEncoded, // 65 bytes
     ciphertext,
-    mac, // 32 bytes
+    mac // 32 bytes
   ]);
   return serializedCiphertext;
 };
@@ -115,15 +117,17 @@ const Decrypt = (privKey, encrypted) => {
   const ephemPubKey = ec.keyFromPublic(ephemPubKeyEncoded).getPublic();
 
   const px = ec.keyFromPrivate(privKey).derive(ephemPubKey);
-  const hash = concatKDF(Crypto.createHash('sha256'), px.toArrayLike(Buffer));
+  const hash = concatKDF(Crypto.createHash("sha256"), px.toArrayLike(Buffer));
   const encryptionKey = hash.slice(0, encKeyLength);
-  const macKey = Crypto.createHash('sha256')
+  const macKey = Crypto.createHash("sha256")
     .update(hash.slice(encKeyLength))
     .digest();
-  const computedMac = Crypto.createHmac('sha256', macKey).update(ciphertext).digest();
+  const computedMac = Crypto.createHmac("sha256", macKey)
+    .update(ciphertext)
+    .digest();
   // verify mac
   if (!BufferEqual(computedMac, mac)) {
-    throw new Error('MAC mismatch');
+    throw new Error("MAC mismatch");
   }
   const plaintext = AES128CtrDecrypt(encryptionKey, ciphertext);
   return plaintext;
@@ -133,4 +137,6 @@ module.exports = {
   encrypt: Encrypt,
   decrypt: Decrypt,
   concatKDF,
+  AES128CtrEncrypt,
+  AES128CtrDecrypt
 };
